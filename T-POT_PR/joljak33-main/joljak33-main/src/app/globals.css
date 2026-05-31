@@ -1,0 +1,53 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --dark: #0f172a;
+  --dark2: #1e293b;
+  --indigo: #6366f1;
+  --indigo-light: #a5b4fc;
+  --indigo-dim: rgba(99, 102, 241, 0.12);
+  --yellow: #fbbf24;
+  --green: #22c55e;
+  --red: #ef4444;
+  --muted: #64748b;
+  --border: rgba(255, 255, 255, 0.1);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

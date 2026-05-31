@@ -1,0 +1,182 @@
+================================================================================
+ HONEYPOT INTEGRATED PLATFORM — AI 컨텍스트 프롬프트
+ 이 파일을 AI에게 그대로 붙여넣으면 프로젝트 전체 맥락을 이해합니다.
+================================================================================
+
+## 프로젝트 개요
+
+이 프로젝트는 "Honeypot Integrated Platform"이라는 캡스톤 디자인 프로젝트입니다.
+다중 허니팟 + ML 공격 분류 + LLM 분석 + 공격 시나리오 자동화를 하나의 통합 대시보드로 묶었습니다.
+현재는 로컬 Docker 기반 구조에서 AWS T-Pot HIVE 연동으로 확장하는 시점입니다.
+
+GitHub: https://github.com/Donghyun0918/honeypot-integrated
+
+
+## 기술 스택
+
+- Frontend : Next.js 15 (App Router, TypeScript, "use client")
+- Backend  : FastAPI (Python, async, JWT 인증, SQLAlchemy + SQLite)
+- ML       : scikit-learn RandomForest (binary + multi-class 분류)
+- LLM      : Ollama (gemma3 또는 llama3.1:8b) — 고위험 공격 자연어 분석
+- Profiling: Spring Boot 3 (별도 리포 ../profiling-service, PostgreSQL 16)
+- 허니팟   : Cowrie, Heralding, OpenCanary, SNARE/Tanner, Dionaea, Mailoney, Conpot
+- 공격자   : Kali Linux 컨테이너 (nmap, hydra, sqlmap, nc, curl, sshpass)
+- 인프라   : Docker Compose (14개 컨테이너), AWS EC2 t3a.xlarge (T-Pot용)
+
+
+## 시스템 구조 (기존 — 로컬 Docker)
+
+[브라우저 :8001]
+    └─► Next.js Frontend
+            ├─► FastAPI Backend (:8000)
+            │       ├── Docker SDK → 유저별 허니팟 컨테이너 생성/삭제
+            │       ├── Kali (docker exec) → 공격 시나리오 9가지 실행
+            │       ├── parse_logs.py → dataset.csv (7종 허니팟 로그 파싱)
+            │       ├── ml_prepare.py → dataset_ml.csv (라벨링 + 피처)
+            │       ├── ml_service.py → RandomForest 학습/추론, MITRE ATT&CK 점수
+            │       └── Ollama (:11434) → MITRE ≥ 70인 공격만 LLM 분석
+            └─► Spring Boot Profiling (:8090)
+                    └── PostgreSQL 16 (공격 이력 영속화)
+
+유저별 허니팟 컨테이너 이름 패턴: hp_{username}_{honeypot}
+로그 마운트 경로: ${HONEYPOT_LOGS_HOST}/{username}/{honeypot}/
+ML 모델 저장 경로: /app/data/ml_models/binary_model.pkl, multi_model.pkl
+
+
+## 데이터 흐름 (한 사이클)
+
+1. 시나리오 실행: Frontend → POST /api/scenarios/{id}/run → Backend → Kali → 허니팟
+2. 로그 수집: 허니팟 → /honeypot_logs/{user}/{honeypot}/
+3. 데이터셋 생성: POST /api/dataset/generate → parse_logs.py → dataset.csv
+                  POST /api/ml/prepare/run → ml_prepare.py → dataset_ml.csv
+4. 모델 학습: POST /api/ml/train → RandomForest → *.pkl 저장
+5. 분류+분석: classify() → MITRE 점수 → Ollama → riskScore/severity/summary/solution
+              → Spring Boot 프로파일링 저장
+
+
+## 주요 파일 목록
+
+backend/main.py          : FastAPI 라우터 전체 (인증/유저/컨테이너/시나리오/ML)
+backend/auth.py          : JWT + bcrypt 인증
+backend/database.py      : SQLAlchemy (User, ScenarioRun — SQLite)
+backend/docker_ops.py    : Docker SDK 유저별 허니팟 생성/삭제/제어
+backend/scenario_runner.py: Kali docker exec 시나리오 실행
+backend/parse_logs.py    : 7종 허니팟 로그 → dataset.csv (29컬럼)
+backend/ml_prepare.py    : dataset.csv → dataset_ml.csv (라벨링 + 피처 추출)
+backend/ml_service.py    : RandomForest 학습/추론, MITRE ATT&CK 점수 계산
+
+frontend/src/app/honeypot/page.tsx  : 컨테이너/시나리오/데이터셋 탭
+frontend/src/app/ml/page.tsx        : 모델 학습/업로드/테스트 (Step 1~4)
+frontend/src/app/dashboard/page.tsx : 통계 + D3 공격 지도
+frontend/src/app/profiling/page.tsx : Spring Boot 프록시 (공격 이력 + LLM 결과)
+frontend/src/lib/api-client.ts      : JWT getToken() + API 래퍼
+
+attack_scenarios/        : 9가지 공격 시나리오 bash 스크립트
+honeypots/               : 7종 허니팟 설정 파일
+
+
+## dataset.csv 스키마 (29컬럼 주요 항목)
+
+timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+honeypot_type, event_type, username, password, command,
+session_id, duration, bytes_in, bytes_out,
+country, city, latitude, longitude,
+url, method, status_code, user_agent,
+filename, malware_hash, sensor, label, mitre_technique, severity
+
+
+## ML 분류 체계
+
+이진 분류 (binary_model.pkl):
+  0 = 정상 (Etc)
+  1 = 공격
+
+다중 분류 (multi_model.pkl):
+  - Recon      (정찰 — nmap 등)
+  - Brute Force (무차별 대입)
+  - Intrusion  (침투 — SQLi, 쉘)
+  - Malware    (악성코드 업로드)
+  - Etc        (기타/정상)
+
+
+## 알려진 이슈 및 해결 내역
+
+1. parse_logs.py exit code 255
+   → 스크립트 끝에 sys.exit(0) 추가
+   → 엔드포인트에서 exit code 대신 CSV 파일 존재 여부로 성공 판단
+
+2. ML 페이지 "TypeError: Failed to fetch"
+   → localhost가 IPv6(::1)로 해석되어 Docker IPv4와 충돌
+   → frontend 전체에서 localhost → 127.0.0.1 교체
+
+3. CSV 다운로드 401 오류
+   → <a href> 직접 링크는 JWT 미전달
+   → fetch + createObjectURL 방식으로 교체
+
+4. WSL에서 chmod 적용 안 됨
+   → /mnt/d/는 NTFS라 chmod 무시됨
+   → WSL 홈(~/)으로 파일 복사 후 chmod 적용
+
+
+## T-Pot 연동 확장 구조 (현재 진행 중)
+
+현재 AWS EC2 t3a.xlarge (Ubuntu 22.04) 에 T-Pot HIVE 24.04 설치 완료.
+공인 IP: 54.144.217.205
+T-Pot 웹 UI: https://54.144.217.205:64297 (계정: kkk)
+SSH 포트: 64295 (T-Pot이 22번을 Cowrie 허니팟으로 전환)
+
+T-Pot이 제공하는 허니팟: 30개+
+  → Cowrie, Heralding, Conpot, Mailoney, SNARE, Dionaea, OpenCanary,
+     Log4Pot, Honeytrap, ADBHoney, ElasticPot, Redishoneypot, Beelzebub(LLM),
+     Galah(LLM HTTP), Ddospot, IPPHoney, CitrixHoneypot, Hellpot 등
+
+로그 수집 방향:
+  T-Pot Elasticsearch → scp 또는 API → 로컬 parse_logs.py → dataset.csv
+
+목표:
+  - 실제 인터넷 공격 데이터로 ML 모델 재학습 (품질 향상)
+  - LLM 분석 모듈을 독립 컨테이너로 분리
+  - T-Pot 오픈소스에 ML 분류 컨테이너 / 한국어 Kibana 대시보드 PR 기여
+
+
+## 개발 환경
+
+OS: Windows 11 + WSL2 (Ubuntu)
+Docker: Docker Desktop (WSL2 백엔드)
+경로 규칙: .env의 호스트 경로는 /mnt/d/... 형식 사용 (WSL 기준)
+주의: Windows 경로(D:/...)와 WSL 경로(/mnt/d/...)를 섞으면 컨테이너가 다른 파일시스템 뷰를 봄
+
+로컬 접속:
+  Frontend       http://127.0.0.1:8001
+  FastAPI docs   http://127.0.0.1:8000/docs
+  Profiling      http://127.0.0.1:8090/api/health
+  Ollama         http://127.0.0.1:11434
+
+
+## 코딩 컨벤션
+
+Python:
+  - PEP8, 타입 힌트 권장
+  - 비동기 라우터는 async def
+  - 블로킹 작업은 run_in_executor 또는 threading.Thread(daemon=True)
+
+TypeScript:
+  - Next.js 15 App Router
+  - 클라이언트 컴포넌트는 "use client" 명시
+  - 토큰은 getToken()으로 일관되게 접근
+  - API 호출 시 127.0.0.1:8000 사용 (localhost 금지 — IPv6 충돌)
+
+Bash 시나리오:
+  - set -e 필수
+  - 모든 IP/포트는 환경변수로 주입 (하드코딩 금지)
+
+
+## 이 프롬프트를 받은 AI에게 요청 사항
+
+- 위 구조를 기반으로 코드 수정/추가 작업을 도와주세요.
+- 파일 경로는 프로젝트 루트(honeypot-integrated/) 기준으로 표기합니다.
+- 기존 컨벤션(async def, 127.0.0.1, getToken() 등)을 유지해 주세요.
+- 보안 관련 변경(JWT, 비밀번호, 토큰)은 반드시 확인 후 적용해 주세요.
+- T-Pot 연동 작업 시 로그 포맷이 기존 7종 허니팟과 다를 수 있으므로 parse_logs.py 확장이 필요합니다.
+
+================================================================================

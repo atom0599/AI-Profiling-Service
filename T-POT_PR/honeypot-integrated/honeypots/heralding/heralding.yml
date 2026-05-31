@@ -1,0 +1,67 @@
+bind_host: ''
+
+activity_logging:
+  file:
+    enabled: true
+    session_csv_log_file: "/var/log/heralding/session.csv"
+    session_json_log_file: ""
+    authentication_log_file: "/var/log/heralding/auth.csv"
+  syslog:
+    enabled: false
+  hpfeeds:
+    enabled: false
+    session_channel: "heralding.session"
+    auth_channel: "heralding.auth"
+    host:
+    port: 20000
+    ident:
+    secret:
+
+hash_cracker:
+  enabled: false
+
+capabilities:
+  ftp:
+    enabled: false
+    port: 21
+  http:
+    enabled: true
+    port: 80
+    protocol_specific_data:
+      banner: ""
+  https:
+    enabled: false
+    port: 443
+  smtp:
+    enabled: false
+    port: 25
+  pop3:
+    enabled: false
+    port: 110
+  imap:
+    enabled: false
+    port: 143
+  ssh:
+    enabled: false
+    port: 22
+  telnet:
+    enabled: false
+    port: 23
+  mysql:
+    enabled: true
+    port: 3306
+  mssql:
+    enabled: false
+    port: 1433
+  rdp:
+    enabled: false
+    port: 3389
+  vnc:
+    enabled: false
+    port: 5900
+  sip:
+    enabled: false
+    port: 5060
+  postgresql:
+    enabled: false
+    port: 5432

@@ -1,0 +1,82 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# ── Node.js / Next.js ───────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── 환경 변수 (실 비밀키 커밋 금지) ──────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+frontend/.env.local
+frontend/.env
+
+# ── 데이터셋 / 로그 / 학습 산출물 ───────────────────────────────────────────
+honeypot_logs/
+backend/data/
+*.csv
+*.pkl
+*.joblib
+dataset.csv
+dataset_ml.csv
+dataset_meta.json
+dataset_ml_encoders.json
+
+# 단, scripts 디렉토리 안의 데모/샘플 파일은 예외로 추가하고 싶다면 화이트리스트화
+!scripts/*.py
+!scripts/*.sh
+
+# ── 데이터베이스 ─────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+dashboard.db
+
+# ── Java / Gradle ───────────────────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ── IDE ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Docker ──────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── 임시 파일 ────────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+.cache/
