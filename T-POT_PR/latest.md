@@ -61,6 +61,42 @@
 
 ## 마지막 작업
 
+**날짜:** 2026-06-06
+**작업 내용(세션 요약):** **AWS EC2 배포 계획 수립 (코드 변경 없음 — 결정/구성만).** 졸작 풀스택 전체 + Ollama를 **새 EC2 한 대**에 올리기로 결정 → 사양 확정(t3a.2xlarge 32GB, CPU Ollama) → 보안그룹을 **"T-Pot 포트만 개방"**으로 정리(콘솔에서 적용 완료) → **탄력적 IP 미사용 + EC2 안에서 Claude Code로 직접 작업**하는 방향 확정. 아래 상세.
+
+**배포 범위/사양 (확정):**
+- 범위: **졸작 트랙(capstone/) 풀스택 전체** — T-Pot HIVE 24.04.1 + ml-classifier/threat-console 사이드카 + Spring(profiling)+Postgres + Next.js(:8001) + **Ollama(:11434)**. 새 인스턴스 신규 생성.
+- 인스턴스 **t3a.2xlarge** (8 vCPU / **32GB RAM, GPU 없음 → CPU Ollama**), EBS **gp3 300GB**.
+- OS: 기존엔 **Ubuntu 22.04**만 사용(문서상 유일). "24.04"는 OS가 아니라 **T-Pot 버전**(`TPOT_VERSION=24.04.1`)이니 혼동 주의. 신규는 22.04(검증됨) 또는 24.04 LTS 중 택1 — 미확정.
+- LLM: CPU Ollama라 응답 느림(분석은 비동기라 데모 OK). **Beelzebub/Galah LLM 허니팟은 CPU 부적합 → 비활성 권장.** 주 모델 미정(일단 llama3.1:8b, 느리면 llama3.2:3b 등 경량 교체).
+
+**보안그룹 — "T-Pot 포트만 개방" (AWS 콘솔 적용 완료):**
+- 최종 인바운드 4개만 유지: `64295/tcp`(SSH 관리, **39.123.17.117/32**) · `64297/tcp`(웹 UI, 39.123.17.117/32) · `1-64000/tcp`(허니팟, 0.0.0.0/0) · `1-64000/udp`(허니팟, 0.0.0.0/0).
+- 삭제한 잉여 규칙: 8001·8090(/32)·SSH 22·MSSQL 1433 — 전부 1-64000 범위에 이미 포함돼 무의미. (22는 관리SSH 아님, T-Pot Endlessh/Cowrie 허니팟. 실제 관리SSH는 64295.)
+- ⚠️ **핵심 함정(졸작 배포 시 반드시 처리):** 8001(Next)·8090(Spring)·11434(Ollama)가 **1-64000 개방 범위 안** → 컨테이너가 0.0.0.0 바인딩이면 전 세계 노출됨. SG는 deny 불가(허용만, 느슨한 규칙이 이김)라 /32 제한해도 무력. → capstone `docker-compose.yml`의 host publish를 **`127.0.0.1` 바인딩**(Ollama는 host포트 제거, docker network 내부통신)으로 바꾸고 **SSH 터널**(`ssh -p 64295 -L 8001:127.0.0.1:8001 -L 8090:... -L 11434:...`)로만 접근해야 실제로 가려짐. 64295/64297은 64000 밖이라 진짜 보호됨.
+- 포트충돌 주의: T-Pot 허니팟이 8001/8090 선점 시 127.0.0.1 바인딩 충돌 → `ss -tlnp` 확인 후 capstone 포트 변경.
+
+**운영 방식 결정:**
+- **탄력적 IP 미사용** (사용자 결정). 서버 내에서 직접 작업하므로 IP 변동은 SSH 재접속만 영향. 단 내 IP(39.123.17.117) 유동 시 64295/64297 SG 소스 갱신 필요.
+- **EC2 안에 Claude Code 설치해 서버에서 직접 작업** 방향. 설치: Node 20(nodesource) → `npm i -g @anthropic-ai/claude-code` → 헤드리스 인증(구독 OAuth URL 복붙 or `ANTHROPIC_API_KEY`) → **tmux**로 세션 유지.
+- 코드 전송: 이 통합 리포는 원격 push 미설정(capstone 로컬 git만) → GitHub private push 또는 `rsync -e "ssh -p 64295"` 필요. tpot-fork는 `github.com/Donghyun0918/tpot-based`에 있어 바로 clone 가능.
+
+**EC2용 .env 교체 필수 항목 (현재 WSL 로컬값 → EC2값):** `TPOT_OSTYPE=win→linux`, `TPOT_DATA_PATH=/home/kdh20/...→/home/ubuntu/tpotce/data`, `TPOT_PULL_POLICY=missing→always`, Ollama 호스트 `http://ollama.local:11434→http://localhost:11434`, `WEB_USER`는 install.sh로 새 생성.
+
+### 다음 작업 (EC2 배포)
+
+1. **인스턴스 기동** → SSH(`-p 64295`) 접속. (퍼블릭 IP는 EIP 미사용이라 stop/start마다 변동)
+2. **Claude Code 설치** (Node20 + npm i -g + 인증 + tmux). 인증방식(구독 vs API키)·코드전송(git push vs rsync) **미확정 — 사용자 결정 대기.**
+3. **코드 전송** → EC2용 `.env` 작성(위 교체항목) → `install.sh`로 T-Pot HIVE 설치 → 표준 기동·검증.
+4. **사이드카**(`sidecars_overlay.yml`로 ml-classifier+threat-console) → **capstone 풀스택**(127.0.0.1 바인딩 적용) 기동.
+5. nginx 호스트 마운트 권한 `chmod 644 + chattr +i` 고정(403/500 예방). (LLM 백엔드는 Ollama 기동 후 모델 pull 시 결정.)
+
+> 상세 배포 사양은 자동메모리 `project_ec2_fullstack_deploy.md`에도 기록됨.
+
+---
+
+## 이전 작업 (2026-05-25 — ML 재학습 + 모델 카드 + 데모 복구)
+
 **날짜:** 2026-05-25
 **작업 내용(세션 요약):** 외부 CICIDS 22피처 모델 배치 → 검사 결과 **라벨 부재·Init_Win 결손으로 활성화 보류** → **경로1 채택: 기존 16피처 ml-classifier 모델을 허니팟 수집 데이터로 재학습**(LightGBM 6라벨, holdout acc/F1 0.998) → **핀 버전 unpickle 검증 통과** → **프론트 대시보드에 "현재 분류 모델" 카드 추가** → **데모 스택 복구**. (아래 시간순 하위 블록 참조. 다음 할 일은 이 섹션 맨 끝 "다음 작업".)
 
